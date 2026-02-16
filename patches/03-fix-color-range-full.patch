@@ -1,0 +1,28 @@
+Description: Encode H.264 in full color range
+ FFmpeg defaults to limited color range (16-235) when encoding but
+ clients may decode assuming full range (0-255). This leads to washed
+ out or white-appearing frames. Set color_range to AVCOL_RANGE_JPEG
+ (full range) on both the software and hardware encoder codec contexts.
+Author: Arjen Hiemstra <ahiemstra@heimr.nl>
+Origin: upstream, https://invent.kde.org/plasma/krdp/-/commit/a60e7b1
+Bug-KDE: https://bugs.kde.org/show_bug.cgi?id=507015
+--- a/src/libx264encoder.cpp
++++ b/src/libx264encoder.cpp
+@@ -64,6 +64,7 @@
+     m_avCodecContext->max_b_frames = 0;
+     m_avCodecContext->gop_size = 100;
+     m_avCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
++    m_avCodecContext->color_range = AVCOL_RANGE_JPEG;
+     m_avCodecContext->time_base = AVRational{1, 1000};
+
+     if (m_quality) {
+--- a/src/h264vaapiencoder.cpp
++++ b/src/h264vaapiencoder.cpp
+@@ -128,6 +128,7 @@
+     m_avCodecContext->max_b_frames = 0;
+     m_avCodecContext->gop_size = 100;
+     m_avCodecContext->pix_fmt = AV_PIX_FMT_VAAPI;
++    m_avCodecContext->color_range = AVCOL_RANGE_JPEG;
+     m_avCodecContext->time_base = AVRational{1, 1000};
+
+     if (m_quality) {
