@@ -1,0 +1,2 @@
+01-fix-vaapi-hw-frames-ctx.patch
+02-fix-software-encoder-filter-graph.patch

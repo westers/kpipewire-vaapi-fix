@@ -1,0 +1,39 @@
+Description: Set buffersrc filter parameters before initialization
+ According to FFmpeg documentation, parameters need to be set before
+ initialization otherwise things fail. This happens with recent FFmpeg
+ that complains about missing the hardware encoding context (hw_frames_ctx).
+ Split avfilter_graph_create_filter() into alloc + set params + init.
+Author: Arjen Hiemstra <ahiemstra@heimr.nl>
+Origin: upstream, https://invent.kde.org/plasma/kpipewire/-/commit/e44782e
+Bug-KDE: https://bugs.kde.org/show_bug.cgi?id=515342
+--- a/src/h264vaapiencoder.cpp
++++ b/src/h264vaapiencoder.cpp
+@@ -42,13 +42,8 @@ bool H264VAAPIEncoder::initialize(const QSize &size)
+         return false;
+     }
+
+-    int ret = avfilter_graph_create_filter(&m_inputFilter,
+-                                           avfilter_get_by_name("buffer"),
+-                                           "in",
+-                                           "width=1:height=1:pix_fmt=drm_prime:time_base=1/1",
+-                                           nullptr,
+-                                           m_avFilterGraph);
+-    if (ret < 0) {
++    m_inputFilter = avfilter_graph_alloc_filter(m_avFilterGraph, avfilter_get_by_name("buffer"), "in");
++    if (!m_inputFilter) {
+         qCWarning(PIPEWIRERECORD_LOGGING) << "Failed to create the buffer filter";
+         return false;
+     }
+@@ -68,6 +63,12 @@ bool H264VAAPIEncoder::initialize(const QSize &size)
+     av_free(parameters);
+     parameters = nullptr;
+
++    int ret = avfilter_init_str(m_inputFilter, nullptr);
++    if (ret < 0) {
++        qCWarning(PIPEWIRERECORD_LOGGING) << "Failed to create the buffer filter";
++        return false;
++    }
++
+     ret = avfilter_graph_create_filter(&m_outputFilter, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, m_avFilterGraph);
+     if (ret < 0) {
+         qCWarning(PIPEWIRERECORD_LOGGING) << "Could not create buffer output filter";
