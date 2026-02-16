@@ -8,7 +8,7 @@ Without these patches, KRDP fails to use GPU hardware encoding and either falls 
 
 KRDP uses the KPipeWire library to capture the screen via PipeWire and encode it as H.264 for RDP clients. On systems with VA-API capable GPUs (AMD, Intel, or NVIDIA with `nvidia-vaapi-driver`), it attempts hardware encoding through the `h264_vaapi` FFmpeg encoder using DMA-BUF/DRM PRIME for zero-copy GPU buffer sharing.
 
-The version of KPipeWire shipped with Kubuntu 26.04 (6.5.5) has two bugs that break this:
+The version of KPipeWire shipped with Kubuntu 26.04 (6.5.5) has two bugs that break encoding and is missing full color range support:
 
 ### Bug 1: VAAPI hw_frames_ctx not set before filter initialization
 
@@ -31,7 +31,14 @@ Failed to create the buffer filter
 
 When VAAPI is unavailable and encoding falls back to libx264/openh264 (software), the FFmpeg filter graph had the pixel format conversion (`format=pix_fmts=yuv420p`) applied after the pad/scale filters instead of before. This caused incorrect pixel format handling in the pipeline.
 
-**Fix:** Reorder the filter graph from `pad,format` to `format,pad`.
+**Fix:** Reorder the filter graph from `pad,format` to `format,pad` and use correct `scale` filter syntax.
+
+### Feature: Full color range encoding support
+
+**KDE Bug:** [507015](https://bugs.kde.org/show_bug.cgi?id=507015)
+**Upstream Fix:** [cb00651](https://invent.kde.org/plasma/kpipewire/-/commit/cb00651)
+
+Without color range metadata, FFmpeg-based RDP decoders assume limited range, causing incorrect/washed-out colors. This patch adds a `ColorRange` option that allows KRDP to request full range encoding, which fixes color accuracy for all RDP clients that use FFmpeg for decoding.
 
 ## Supported Hardware
 
@@ -43,7 +50,7 @@ The VAAPI patch works with any GPU that exposes VA-API H.264 encode capability:
 | **Intel** | `intel-media-driver` or `i965-va-driver` | Works out of the box |
 | **NVIDIA** | `nvidia-vaapi-driver` | Requires the VA-API compatibility layer for NVENC |
 
-Systems without VA-API support will use the libx264 software encoder (also fixed by patch 02).
+Systems without VA-API support will use the libx264 software encoder (also fixed by patches 02 and 03).
 
 ## Symptoms (How to Tell if You Need This Fix)
 
@@ -102,7 +109,7 @@ cd kpipewire-vaapi-fix
 
 The script will:
 1. Download the kpipewire 6.5.5 source package
-2. Apply both patches
+2. Apply all three patches
 3. Build .deb packages
 4. Place them in the `debs/` directory
 
@@ -177,8 +184,10 @@ systemctl --user restart xdg-desktop-portal plasma-xdg-desktop-portal-kde app-or
 ## References
 
 - [KDE Bug 515342 - VAAPI hw_frames_ctx](https://bugs.kde.org/show_bug.cgi?id=515342)
+- [KDE Bug 507015 - Incorrect colors](https://bugs.kde.org/show_bug.cgi?id=507015)
 - [KDE Bug 513077 - Software encoder filter graph](https://bugs.kde.org/show_bug.cgi?id=513077)
 - [KDE Bug 515950 - KRDP black screen](https://bugs.kde.org/show_bug.cgi?id=515950)
-- [Upstream fix e44782e](https://invent.kde.org/plasma/kpipewire/-/commit/e44782e)
-- [Upstream fix d7d1f00](https://invent.kde.org/plasma/kpipewire/-/commit/d7d1f00)
+- [Upstream fix e44782e - VAAPI hw_frames_ctx](https://invent.kde.org/plasma/kpipewire/-/commit/e44782e)
+- [Upstream fix cb00651 - Full color range](https://invent.kde.org/plasma/kpipewire/-/commit/cb00651)
+- [Upstream fix d7d1f00 - Filter graph syntax](https://invent.kde.org/plasma/kpipewire/-/commit/d7d1f00)
 - [KPipeWire source](https://invent.kde.org/plasma/kpipewire)

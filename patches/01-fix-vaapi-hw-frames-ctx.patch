@@ -1,17 +1,20 @@
-Description: Set buffersrc filter parameters before initialization
- According to FFmpeg documentation, parameters need to be set before
- initialization otherwise things fail. This happens with recent FFmpeg
- that complains about missing the hardware encoding context (hw_frames_ctx).
- Split avfilter_graph_create_filter() into alloc + set params + init.
-Author: Arjen Hiemstra <ahiemstra@heimr.nl>
-Origin: upstream, https://invent.kde.org/plasma/kpipewire/-/commit/e44782e
-Bug-KDE: https://bugs.kde.org/show_bug.cgi?id=515342
+From 285c87e3c83665943107e2e0779e8538bc9c4736 Mon Sep 17 00:00:00 2001
+From: steve westerhouse <amiga1.2k@gmail.com>
+Date: Mon, 16 Feb 2026 14:36:36 -0600
+Subject: [PATCH] Fix VAAPI hw_frames_ctx initialization order
+
+---
+ src/h264vaapiencoder.cpp | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/src/h264vaapiencoder.cpp b/src/h264vaapiencoder.cpp
+index fe2435e..4b4a903 100644
 --- a/src/h264vaapiencoder.cpp
 +++ b/src/h264vaapiencoder.cpp
 @@ -42,13 +42,8 @@ bool H264VAAPIEncoder::initialize(const QSize &size)
          return false;
      }
-
+ 
 -    int ret = avfilter_graph_create_filter(&m_inputFilter,
 -                                           avfilter_get_by_name("buffer"),
 -                                           "in",
@@ -27,7 +30,7 @@ Bug-KDE: https://bugs.kde.org/show_bug.cgi?id=515342
 @@ -68,6 +63,12 @@ bool H264VAAPIEncoder::initialize(const QSize &size)
      av_free(parameters);
      parameters = nullptr;
-
+ 
 +    int ret = avfilter_init_str(m_inputFilter, nullptr);
 +    if (ret < 0) {
 +        qCWarning(PIPEWIRERECORD_LOGGING) << "Failed to create the buffer filter";
@@ -37,3 +40,6 @@ Bug-KDE: https://bugs.kde.org/show_bug.cgi?id=515342
      ret = avfilter_graph_create_filter(&m_outputFilter, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, m_avFilterGraph);
      if (ret < 0) {
          qCWarning(PIPEWIRERECORD_LOGGING) << "Could not create buffer output filter";
+-- 
+2.51.0
+

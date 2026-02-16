@@ -3,7 +3,7 @@ set -e
 
 KPIPEWIRE_VERSION="6.5.5"
 KPIPEWIRE_DEB_VERSION="6.5.5-0ubuntu1"
-PATCHED_VERSION="${KPIPEWIRE_DEB_VERSION}+vaapi1"
+PATCHED_VERSION="${KPIPEWIRE_DEB_VERSION}+vaapi2"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== KPipeWire VAAPI Fix Builder ==="
@@ -65,8 +65,7 @@ cd "${SRCDIR}"
 echo ""
 echo "=== Applying patches ==="
 mkdir -p debian/patches
-cp "${SCRIPT_DIR}/patches/01-fix-vaapi-hw-frames-ctx.patch" debian/patches/
-cp "${SCRIPT_DIR}/patches/02-fix-software-encoder-filter-graph.patch" debian/patches/
+cp "${SCRIPT_DIR}/patches/"*.patch debian/patches/
 cp "${SCRIPT_DIR}/patches/series" debian/patches/
 
 # Update debian/rules for optimized build
@@ -94,7 +93,8 @@ kpipewire (${PATCHED_VERSION}) resolute; urgency=medium\\
 \\
   * Backport upstream fixes for VAAPI hardware encoding:\\
     - Fix VAAPI hw_frames_ctx initialization order (KDE Bug 515342)\\
-    - Fix software encoder filter graph ordering (KDE Bug 513077)\\
+    - Add full color range encoding support (KDE Bug 507015)\\
+    - Fix software encoder filter graph syntax (KDE Bug 513077)\\
 \\
  -- ${MAINTAINER}  ${TIMESTAMP}\\
 " debian/changelog

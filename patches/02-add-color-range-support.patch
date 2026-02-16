@@ -1,0 +1,245 @@
+From af07a10320046d1fd3208fca6d2d636a441c4499 Mon Sep 17 00:00:00 2001
+From: steve westerhouse <amiga1.2k@gmail.com>
+Date: Mon, 16 Feb 2026 14:37:53 -0600
+Subject: [PATCH] Add support for encoding in full color range
+
+---
+ src/encoder.cpp                   |  5 +++++
+ src/encoder_p.h                   |  3 +++
+ src/h264vaapiencoder.cpp          |  9 ++++++++-
+ src/libopenh264encoder.cpp        |  4 ++++
+ src/libx264encoder.cpp            |  4 +++-
+ src/pipewirebaseencodedstream.cpp | 10 ++++++++++
+ src/pipewirebaseencodedstream.h   |  7 +++++++
+ src/pipewireproduce.cpp           | 11 +++++++++++
+ src/pipewireproduce_p.h           |  3 +++
+ 9 files changed, 54 insertions(+), 2 deletions(-)
+
+diff --git a/src/encoder.cpp b/src/encoder.cpp
+index 7aa1738..fd00b14 100644
+--- a/src/encoder.cpp
++++ b/src/encoder.cpp
+@@ -184,6 +184,11 @@ void Encoder::setEncodingPreference(PipeWireBaseEncodedStream::EncodingPreferenc
+     m_encodingPreference = preference;
+ }
+ 
++void Encoder::setColorRange(PipeWireBaseEncodedStream::ColorRange colorRange)
++{
++    m_colorRange = colorRange;
++}
++
+ AVDictionary *Encoder::buildEncodingOptions()
+ {
+     AVDictionary *options = NULL;
+diff --git a/src/encoder_p.h b/src/encoder_p.h
+index e565cc2..caba2cb 100644
+--- a/src/encoder_p.h
++++ b/src/encoder_p.h
+@@ -100,6 +100,8 @@ public:
+ 
+     void setEncodingPreference(PipeWireBaseEncodedStream::EncodingPreference preference);
+ 
++    void setColorRange(PipeWireBaseEncodedStream::ColorRange colorRange);
++
+ protected:
+     virtual int percentageToAbsoluteQuality(const std::optional<quint8> &quality) = 0;
+     virtual AVDictionary *buildEncodingOptions();
+@@ -116,6 +118,7 @@ protected:
+ 
+     std::optional<quint8> m_quality;
+     PipeWireBaseEncodedStream::EncodingPreference m_encodingPreference;
++    PipeWireBaseEncodedStream::ColorRange m_colorRange = PipeWireBaseEncodedStream::ColorRange::Limited;
+ };
+ 
+ /**
+diff --git a/src/h264vaapiencoder.cpp b/src/h264vaapiencoder.cpp
+index 4b4a903..c920deb 100644
+--- a/src/h264vaapiencoder.cpp
++++ b/src/h264vaapiencoder.cpp
+@@ -8,6 +8,8 @@
+ 
+ #include "h264vaapiencoder_p.h"
+ 
++#include <format>
++
+ #include <QSize>
+ 
+ extern "C" {
+@@ -24,6 +26,8 @@ extern "C" {
+ #define AV_PROFILE_H264_HIGH FF_PROFILE_H264_HIGH
+ #endif
+ 
++using namespace std::string_literals;
++
+ H264VAAPIEncoder::H264VAAPIEncoder(H264Profile profile, PipeWireProduce *produce)
+     : HardwareEncoder(produce)
+     , m_profile(profile)
+@@ -93,7 +97,10 @@ bool H264VAAPIEncoder::initialize(const QSize &size)
+     outputs->pad_idx = 0;
+     outputs->next = nullptr;
+ 
+-    ret = avfilter_graph_parse(m_avFilterGraph, "hwmap=mode=direct:derive_device=vaapi,scale_vaapi=format=nv12:mode=fast", outputs, inputs, NULL);
++    const auto colorRange = m_colorRange == PipeWireBaseEncodedStream::ColorRange::Full ? "full"s : "limited"s;
++    const auto filterGraph = std::format("hwmap=mode=direct:derive_device=vaapi,scale_vaapi=format=nv12:mode=fast:out_range={}", colorRange);
++
++    ret = avfilter_graph_parse(m_avFilterGraph, filterGraph.data(), outputs, inputs, NULL);
+     if (ret < 0) {
+         qCWarning(PIPEWIRERECORD_LOGGING) << "Failed creating filter graph";
+         return false;
+diff --git a/src/libopenh264encoder.cpp b/src/libopenh264encoder.cpp
+index 294c0f2..5620aaf 100644
+--- a/src/libopenh264encoder.cpp
++++ b/src/libopenh264encoder.cpp
+@@ -27,10 +27,14 @@ extern "C" {
+ #define AV_PROFILE_H264_HIGH FF_PROFILE_H264_HIGH
+ #endif
+ 
++using namespace Qt::StringLiterals;
++
+ LibOpenH264Encoder::LibOpenH264Encoder(H264Profile profile, PipeWireProduce *produce)
+     : SoftwareEncoder(produce)
+     , m_profile(profile)
+ {
++    auto colorRange = m_colorRange == PipeWireBaseEncodedStream::ColorRange::Full ? u"full"_s : u"limited"_s;
++    m_filterGraphToParse = u"scale=format=yuv420p,out_range=%1"_s.arg(colorRange);
+ }
+ 
+ bool LibOpenH264Encoder::initialize(const QSize &size)
+diff --git a/src/libx264encoder.cpp b/src/libx264encoder.cpp
+index a8f0e21..75facec 100644
+--- a/src/libx264encoder.cpp
++++ b/src/libx264encoder.cpp
+@@ -32,10 +32,12 @@ LibX264Encoder::LibX264Encoder(H264Profile profile, PipeWireProduce *produce)
+     : SoftwareEncoder(produce)
+     , m_profile(profile)
+ {
++    auto colorRange = m_colorRange == PipeWireBaseEncodedStream::ColorRange::Full ? u"full"_s : u"limited"_s;
++
+     // Adjust the filter graph to ensure we are using an even frame size using a
+     // pad filter. Otherwise the size adjustment below will insert a row/column
+     // of garbage instead of black.
+-    m_filterGraphToParse = u"pad=ceil(iw/2)*2:ceil(ih/2)*2,format=pix_fmts=yuv420p"_s;
++    m_filterGraphToParse = u"pad=ceil(iw/2)*2:ceil(ih/2)*2,scale=format=yuv420p,out_range=%1"_s.arg(colorRange);
+ }
+ 
+ bool LibX264Encoder::initialize(const QSize &size)
+diff --git a/src/pipewirebaseencodedstream.cpp b/src/pipewirebaseencodedstream.cpp
+index 93ea837..192f241 100644
+--- a/src/pipewirebaseencodedstream.cpp
++++ b/src/pipewirebaseencodedstream.cpp
+@@ -32,6 +32,7 @@ struct PipeWireEncodedStreamPrivate {
+     std::optional<quint8> m_quality;
+     PipeWireBaseEncodedStream::EncodingPreference m_encodingPreference;
+     PipeWireBaseEncodedStream::State m_state = PipeWireBaseEncodedStream::Idle;
++    PipeWireBaseEncodedStream::ColorRange m_colorRange = PipeWireBaseEncodedStream::ColorRange::Limited;
+ 
+     std::unique_ptr<QThread> m_produceThread;
+     std::unique_ptr<PipeWireProduce> m_produce;
+@@ -170,6 +171,7 @@ void PipeWireBaseEncodedStream::start()
+     d->m_produce->setQuality(d->m_quality);
+     d->m_produce->setMaxPendingFrames(d->m_maxPendingFrames);
+     d->m_produce->setEncodingPreference(d->m_encodingPreference);
++    d->m_produce->setColorRange(d->m_colorRange);
+     d->m_produce->moveToThread(d->m_produceThread.get());
+     d->m_produceThread->start();
+     QMetaObject::invokeMethod(d->m_produce.get(), &PipeWireProduce::initialize, Qt::QueuedConnection);
+@@ -287,6 +289,14 @@ void PipeWireBaseEncodedStream::setEncodingPreference(PipeWireBaseEncodedStream:
+     }
+ }
+ 
++void PipeWireBaseEncodedStream::setColorRange(ColorRange colorRange)
++{
++    d->m_colorRange = colorRange;
++    if (d->m_produce) {
++        d->m_produce->setColorRange(d->m_colorRange);
++    }
++}
++
+ PipeWireBaseEncodedStream::EncodingPreference PipeWireBaseEncodedStream::encodingPreference()
+ {
+     return d->m_encodingPreference;
+diff --git a/src/pipewirebaseencodedstream.h b/src/pipewirebaseencodedstream.h
+index 8728252..685c6a6 100644
+--- a/src/pipewirebaseencodedstream.h
++++ b/src/pipewirebaseencodedstream.h
+@@ -148,6 +148,13 @@ public:
+     Q_ENUM(EncodingPreference);
+     void setEncodingPreference(EncodingPreference profile);
+ 
++    enum class ColorRange {
++        Limited,
++        Full,
++    };
++    Q_ENUM(ColorRange)
++    void setColorRange(ColorRange colorRange);
++
+ Q_SIGNALS:
+     void activeChanged(bool active);
+     void nodeIdChanged(uint nodeId);
+diff --git a/src/pipewireproduce.cpp b/src/pipewireproduce.cpp
+index e5b05cc..d1309f8 100644
+--- a/src/pipewireproduce.cpp
++++ b/src/pipewireproduce.cpp
+@@ -273,6 +273,14 @@ void PipeWireProduce::setEncodingPreference(const PipeWireBaseEncodedStream::Enc
+     }
+ }
+ 
++void PipeWireProduce::setColorRange(PipeWireBaseEncodedStream::ColorRange colorRange)
++{
++    m_colorRange = colorRange;
++    if (m_encoder) {
++        qCWarning(PIPEWIRERECORD_LOGGING) << "Changing color range after encoding has started is not supported";
++    }
++}
++
+ void PipeWireProduce::processFrame(const PipeWireFrame &frame)
+ {
+     auto f = frame;
+@@ -383,6 +391,7 @@ std::unique_ptr<Encoder> PipeWireProduce::makeEncoder()
+             auto hardwareEncoder = std::make_unique<H264VAAPIEncoder>(profile, this);
+             hardwareEncoder->setQuality(m_quality);
+             hardwareEncoder->setEncodingPreference(m_encodingPreference);
++            hardwareEncoder->setColorRange(m_colorRange);
+             if (hardwareEncoder->initialize(size)) {
+                 return hardwareEncoder;
+             }
+@@ -392,6 +401,7 @@ std::unique_ptr<Encoder> PipeWireProduce::makeEncoder()
+             auto softwareEncoder = std::make_unique<LibX264Encoder>(profile, this);
+             softwareEncoder->setQuality(m_quality);
+             softwareEncoder->setEncodingPreference(m_encodingPreference);
++            softwareEncoder->setColorRange(m_colorRange);
+             if (softwareEncoder->initialize(size)) {
+                 return softwareEncoder;
+             }
+@@ -402,6 +412,7 @@ std::unique_ptr<Encoder> PipeWireProduce::makeEncoder()
+             auto softwareEncoder = std::make_unique<LibOpenH264Encoder>(profile, this);
+             softwareEncoder->setQuality(m_quality);
+             softwareEncoder->setEncodingPreference(m_encodingPreference);
++            softwareEncoder->setColorRange(m_colorRange);
+             if (softwareEncoder->initialize(size)) {
+                 return softwareEncoder;
+             }
+diff --git a/src/pipewireproduce_p.h b/src/pipewireproduce_p.h
+index 7cc49df..12b8cbf 100644
+--- a/src/pipewireproduce_p.h
++++ b/src/pipewireproduce_p.h
+@@ -98,6 +98,8 @@ public:
+ 
+     void setEncodingPreference(const PipeWireBaseEncodedStream::EncodingPreference &encodingPreference);
+ 
++    void setColorRange(PipeWireBaseEncodedStream::ColorRange colorRange);
++
+     void handleEncodedFramesChanged();
+ 
+     const uint m_nodeId;
+@@ -114,6 +116,7 @@ public:
+     std::optional<quint8> m_quality;
+ 
+     PipeWireBaseEncodedStream::EncodingPreference m_encodingPreference;
++    PipeWireBaseEncodedStream::ColorRange m_colorRange = PipeWireBaseEncodedStream::ColorRange::Limited;
+ 
+     struct {
+         QImage texture;
+-- 
+2.51.0
+
