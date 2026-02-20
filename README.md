@@ -154,6 +154,25 @@ No `Failed to create the buffer filter` message should appear after VAAPI detect
 ```
 This is expected on systems without VA-API. The session should not show a black screen.
 
+## Smoke Test Script
+
+The repo includes a one-command helper that can build, install, restart
+services, and watch the relevant KRDP/KPipeWire logs:
+
+```bash
+./smoke-test.sh
+```
+
+Common variants:
+
+```bash
+# Force software fallback during the test and verify profile behavior
+./smoke-test.sh --force-libx264
+
+# Clear any forced encoder override and only watch logs
+./smoke-test.sh --no-build --no-install --clear-force-encoder
+```
+
 ## Will This Break?
 
 Kubuntu 26.04 is still in development. This fix may become unnecessary or need updating:
