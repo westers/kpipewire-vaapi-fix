@@ -2,3 +2,4 @@
 02-add-color-range-support.patch
 03-fix-software-encoder-filter-graph.patch
 04-damage-metadata-encoded-stream.patch
+05-honor-h264-profile-in-libx264-fallback.patch

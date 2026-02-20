@@ -1,0 +1,31 @@
+Description: Honor requested H.264 profile for libx264 software fallback
+ libx264 can still settle on constrained baseline when using speed-oriented
+ presets unless profile is explicitly provided as an encoder option. Mirror
+ the selected H264 profile (Baseline/Main/High) into encoder options so
+ H264Main requests remain Main when VAAPI is unavailable.
+Author: westers
+Origin: local
+Forwarded: no
+--- a/src/libx264encoder.cpp	2026-02-20 00:00:00.000000000 -0600
++++ b/src/libx264encoder.cpp	2026-02-20 00:00:00.000000000 -0600
+@@ -116,6 +116,20 @@
+ AVDictionary *LibX264Encoder::buildEncodingOptions()
+ {
+     AVDictionary *options = SoftwareEncoder::buildEncodingOptions();
++
++    const char *profileName = "baseline";
++    switch (m_profile) {
++    case H264Profile::Baseline:
++        profileName = "baseline";
++        break;
++    case H264Profile::Main:
++        profileName = "main";
++        break;
++    case H264Profile::High:
++        profileName = "high";
++        break;
++    }
++    av_dict_set(&options, "profile", profileName, 0);
+ 
+     // Disable motion estimation, not great while dragging windows but speeds up encoding by an order of magnitude
+     av_dict_set(&options, "flags", "+mv4", 0);

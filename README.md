@@ -50,7 +50,7 @@ The VAAPI patch works with any GPU that exposes VA-API H.264 encode capability:
 | **Intel** | `intel-media-driver` or `i965-va-driver` | Works out of the box |
 | **NVIDIA** | `nvidia-vaapi-driver` | Requires the VA-API compatibility layer for NVENC |
 
-Systems without VA-API support will use the libx264 software encoder (also fixed by patches 02 and 03).
+Systems without VA-API support will use the libx264 software encoder (also fixed by patches 02, 03, and 05).
 
 ## Symptoms (How to Tell if You Need This Fix)
 
@@ -109,7 +109,7 @@ cd kpipewire-vaapi-fix
 
 The script will:
 1. Download the kpipewire 6.5.5 source package
-2. Apply all three patches
+2. Apply all patches in `patches/series`
 3. Build .deb packages
 4. Place them in the `debs/` directory
 
@@ -150,7 +150,7 @@ No `Failed to create the buffer filter` message should appear after VAAPI detect
 **Software encoding fallback (libx264) working:**
 ```
 [libx264 @ ...] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX ...
-[libx264 @ ...] profile Constrained Baseline, level ...
+[libx264 @ ...] profile Main, level ...  # when KRDP requests H264Main
 ```
 This is expected on systems without VA-API. The session should not show a black screen.
 
