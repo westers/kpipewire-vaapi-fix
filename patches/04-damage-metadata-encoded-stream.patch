@@ -5,11 +5,11 @@ Description: Enable and expose encoded frame damage metadata for PipeWireEncoded
 Author: westers
 Origin: local
 Forwarded: no
---- a/src/pipewirebaseencodedstream.h	2026-01-13 06:58:10.000000000 -0600
-+++ b/src/pipewirebaseencodedstream.h	2026-02-19 23:40:24.422912830 -0600
-@@ -148,6 +148,14 @@
-     Q_ENUM(EncodingPreference);
-     void setEncodingPreference(EncodingPreference profile);
+--- a/src/pipewirebaseencodedstream.h
++++ b/src/pipewirebaseencodedstream.h
+@@ -155,6 +155,14 @@
+     Q_ENUM(ColorRange)
+     void setColorRange(ColorRange colorRange);
  
 +    /**
 +     * Enable PipeWire damage metadata on the underlying source stream.
@@ -22,8 +22,8 @@ Forwarded: no
  Q_SIGNALS:
      void activeChanged(bool active);
      void nodeIdChanged(uint nodeId);
---- a/src/pipewirebaseencodedstream.cpp	2026-01-13 06:58:10.000000000 -0600
-+++ b/src/pipewirebaseencodedstream.cpp	2026-02-19 23:40:32.268696311 -0600
+--- a/src/pipewirebaseencodedstream.cpp
++++ b/src/pipewirebaseencodedstream.cpp
 @@ -28,6 +28,7 @@
      Fraction m_maxFramerate;
      int m_maxPendingFrames = 50;
@@ -32,8 +32,7 @@ Forwarded: no
      PipeWireBaseEncodedStream::Encoder m_encoder = PipeWireBaseEncodedStream::NoEncoder;
      std::optional<quint8> m_quality;
      PipeWireBaseEncodedStream::EncodingPreference m_encodingPreference;
-@@ -171,7 +172,8 @@
-     d->m_produce->setQuality(d->m_quality);
+@@ -172,6 +173,7 @@
      d->m_produce->setMaxPendingFrames(d->m_maxPendingFrames);
      d->m_produce->setEncodingPreference(d->m_encodingPreference);
      d->m_produce->setColorRange(d->m_colorRange);
@@ -41,7 +40,7 @@ Forwarded: no
      d->m_produce->moveToThread(d->m_produceThread.get());
      d->m_produceThread->start();
      QMetaObject::invokeMethod(d->m_produce.get(), &PipeWireProduce::initialize, Qt::QueuedConnection);
-@@ -287,6 +289,23 @@
+@@ -297,6 +299,23 @@
      }
  }
  
@@ -65,8 +64,8 @@ Forwarded: no
  PipeWireBaseEncodedStream::EncodingPreference PipeWireBaseEncodedStream::encodingPreference()
  {
      return d->m_encodingPreference;
---- a/src/pipewireencodedstream.h	2026-01-13 06:58:10.000000000 -0600
-+++ b/src/pipewireencodedstream.h	2026-02-19 23:40:48.974238026 -0600
+--- a/src/pipewireencodedstream.h
++++ b/src/pipewireencodedstream.h
 @@ -7,6 +7,8 @@
  #pragma once
  
@@ -102,8 +101,8 @@ Forwarded: no
  
  protected:
      std::unique_ptr<PipeWireProduce> makeProduce() override;
---- a/src/pipewireencodedstream.cpp	2026-01-13 06:58:10.000000000 -0600
-+++ b/src/pipewireencodedstream.cpp	2026-02-19 23:40:56.136042674 -0600
+--- a/src/pipewireencodedstream.cpp
++++ b/src/pipewireencodedstream.cpp
 @@ -67,6 +67,22 @@
          Q_EMIT m_encodedStream->sizeChanged(m_size);
      }
@@ -135,9 +134,9 @@ Forwarded: no
  }
  
  PipeWireEncodedStream::~PipeWireEncodedStream() = default;
---- a/src/pipewireproduce_p.h	2026-01-13 06:58:10.000000000 -0600
-+++ b/src/pipewireproduce_p.h	2026-02-19 23:40:37.562550685 -0600
-@@ -99,6 +99,7 @@
+--- a/src/pipewireproduce_p.h
++++ b/src/pipewireproduce_p.h
+@@ -97,6 +97,7 @@
      void setQuality(const std::optional<quint8> &quality);
  
      void setEncodingPreference(const PipeWireBaseEncodedStream::EncodingPreference &encodingPreference);
@@ -145,10 +144,7 @@ Forwarded: no
  
      void setColorRange(PipeWireBaseEncodedStream::ColorRange colorRange);
  
-     void handleEncodedFramesChanged();
- 
-@@ -118,6 +119,7 @@
-     std::optional<quint8> m_quality;
+@@ -117,6 +118,7 @@
  
      PipeWireBaseEncodedStream::EncodingPreference m_encodingPreference;
      PipeWireBaseEncodedStream::ColorRange m_colorRange = PipeWireBaseEncodedStream::ColorRange::Limited;
@@ -156,8 +152,8 @@ Forwarded: no
  
      struct {
          QImage texture;
---- a/src/pipewireproduce.cpp	2026-01-13 06:58:10.000000000 -0600
-+++ b/src/pipewireproduce.cpp	2026-02-19 23:40:42.528414420 -0600
+--- a/src/pipewireproduce.cpp
++++ b/src/pipewireproduce.cpp
 @@ -51,6 +51,7 @@
  {
      m_stream.reset(new PipeWireSourceStream(nullptr));
@@ -166,7 +162,7 @@ Forwarded: no
  
      // The check in supportsHardwareEncoding() is insufficient to fully
      // determine if we actually support hardware encoding the current stream,
-@@ -273,6 +274,11 @@
+@@ -281,6 +282,11 @@
      }
  }
  
