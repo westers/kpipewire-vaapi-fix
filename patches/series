@@ -1,3 +1,4 @@
 01-fix-vaapi-hw-frames-ctx.patch
 02-add-color-range-support.patch
 03-fix-software-encoder-filter-graph.patch
+04-damage-metadata-encoded-stream.patch

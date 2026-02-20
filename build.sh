@@ -3,8 +3,11 @@ set -e
 
 KPIPEWIRE_VERSION="6.5.5"
 KPIPEWIRE_DEB_VERSION="6.5.5-0ubuntu1"
-PATCHED_VERSION="${KPIPEWIRE_DEB_VERSION}+vaapi2"
+PATCHED_VERSION="${KPIPEWIRE_DEB_VERSION}+vaapi3"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Ensure Debian helper scripts that use `/usr/bin/env python3` resolve to
+# system Python (with distro modules like python3-debian), not user shims.
+export PATH="/usr/bin:/bin:${PATH}"
 
 echo "=== KPipeWire VAAPI Fix Builder ==="
 echo "Building patched kpipewire ${PATCHED_VERSION}"
@@ -44,7 +47,14 @@ fi
 # Install build dependencies
 echo ""
 echo "=== Installing build dependencies ==="
-sudo apt-get build-dep -y kpipewire
+if [ "${SKIP_BUILD_DEPS:-0}" = "1" ]; then
+    echo "Skipping build-deps (SKIP_BUILD_DEPS=1)"
+else
+    sudo apt-get build-dep -y kpipewire
+    if ! python3 -c "import debian.debian_support" >/dev/null 2>&1; then
+        sudo apt-get install -y python3-debian
+    fi
+fi
 
 # Download source package
 echo ""
@@ -65,8 +75,13 @@ cd "${SRCDIR}"
 echo ""
 echo "=== Applying patches ==="
 mkdir -p debian/patches
-cp "${SCRIPT_DIR}/patches/"*.patch debian/patches/
 cp "${SCRIPT_DIR}/patches/series" debian/patches/
+while IFS= read -r patch_name; do
+    case "${patch_name}" in
+        ""|\#*) continue ;;
+    esac
+    cp "${SCRIPT_DIR}/patches/${patch_name}" debian/patches/
+done < "${SCRIPT_DIR}/patches/series"
 
 # Update debian/rules for optimized build
 cat > debian/rules << 'RULES'
@@ -87,7 +102,13 @@ chmod +x debian/rules
 
 # Update changelog
 TIMESTAMP=$(date -R)
-MAINTAINER="$(git config user.name) <$(git config user.email)>"
+MAINTAINER_NAME="$(git config user.name || true)"
+MAINTAINER_EMAIL="$(git config user.email || true)"
+if [ -z "${MAINTAINER_NAME}" ] || [ -z "${MAINTAINER_EMAIL}" ]; then
+    MAINTAINER_NAME="${DEBFULLNAME:-KPipeWire Local Builder}"
+    MAINTAINER_EMAIL="${DEBEMAIL:-builder@localhost}"
+fi
+MAINTAINER="${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>"
 sed -i "1i\\
 kpipewire (${PATCHED_VERSION}) resolute; urgency=medium\\
 \\
@@ -95,6 +116,7 @@ kpipewire (${PATCHED_VERSION}) resolute; urgency=medium\\
     - Fix VAAPI hw_frames_ctx initialization order (KDE Bug 515342)\\
     - Add full color range encoding support (KDE Bug 507015)\\
     - Fix software encoder filter graph syntax (KDE Bug 513077)\\
+    - Add encoded frame damage metadata plumbing\\
 \\
  -- ${MAINTAINER}  ${TIMESTAMP}\\
 " debian/changelog
@@ -116,7 +138,7 @@ echo "Packages built successfully in ${OUTDIR}/:"
 ls -1 "${OUTDIR}"/*.deb
 echo ""
 echo "Install with:"
-echo "  sudo dpkg -i ${OUTDIR}/libkpipewire-data_*.deb ${OUTDIR}/libkpipewire6_*.deb ${OUTDIR}/libkpipewiredmabuf6_*.deb ${OUTDIR}/libkpipewirerecord6_*.deb"
+echo "  sudo dpkg -i ${OUTDIR}/libkpipewire-data_*.deb ${OUTDIR}/libkpipewire6_*.deb ${OUTDIR}/libkpipewiredmabuf6_*.deb ${OUTDIR}/libkpipewirerecord6_*.deb ${OUTDIR}/qml6-module-org-kde-pipewire_*.deb ${OUTDIR}/libkpipewire-dev_*.deb"
 echo ""
 echo "Then restart services:"
 echo "  systemctl --user restart xdg-desktop-portal plasma-xdg-desktop-portal-kde app-org.kde.krdpserver"

@@ -1,0 +1,176 @@
+Description: Enable and expose encoded frame damage metadata for PipeWireEncodedStream
+ Add opt-in damage metadata support to PipeWireBaseEncodedStream and plumb
+ frame-level metadata (damage region, sequence and presentation timestamp)
+ through PipeWireEncodedStream.
+Author: westers
+Origin: local
+Forwarded: no
+--- a/src/pipewirebaseencodedstream.h	2026-01-13 06:58:10.000000000 -0600
++++ b/src/pipewirebaseencodedstream.h	2026-02-19 23:40:24.422912830 -0600
+@@ -148,6 +148,14 @@
+     Q_ENUM(EncodingPreference);
+     void setEncodingPreference(EncodingPreference profile);
+ 
++    /**
++     * Enable PipeWire damage metadata on the underlying source stream.
++     *
++     * Must be set before start(); changing while recording is not supported.
++     */
++    bool damageEnabled() const;
++    void setDamageEnabled(bool enabled);
++
+ Q_SIGNALS:
+     void activeChanged(bool active);
+     void nodeIdChanged(uint nodeId);
+--- a/src/pipewirebaseencodedstream.cpp	2026-01-13 06:58:10.000000000 -0600
++++ b/src/pipewirebaseencodedstream.cpp	2026-02-19 23:40:32.268696311 -0600
+@@ -28,6 +28,7 @@
+     Fraction m_maxFramerate;
+     int m_maxPendingFrames = 50;
+     bool m_active = false;
++    bool m_damageEnabled = false;
+     PipeWireBaseEncodedStream::Encoder m_encoder = PipeWireBaseEncodedStream::NoEncoder;
+     std::optional<quint8> m_quality;
+     PipeWireBaseEncodedStream::EncodingPreference m_encodingPreference;
+@@ -170,6 +171,7 @@
+     d->m_produce->setQuality(d->m_quality);
+     d->m_produce->setMaxPendingFrames(d->m_maxPendingFrames);
+     d->m_produce->setEncodingPreference(d->m_encodingPreference);
++    d->m_produce->setDamageEnabled(d->m_damageEnabled);
+     d->m_produce->moveToThread(d->m_produceThread.get());
+     d->m_produceThread->start();
+     QMetaObject::invokeMethod(d->m_produce.get(), &PipeWireProduce::initialize, Qt::QueuedConnection);
+@@ -287,6 +289,23 @@
+     }
+ }
+ 
++bool PipeWireBaseEncodedStream::damageEnabled() const
++{
++    return d->m_damageEnabled;
++}
++
++void PipeWireBaseEncodedStream::setDamageEnabled(bool enabled)
++{
++    if (d->m_damageEnabled == enabled) {
++        return;
++    }
++    if (d->m_state != Idle || d->m_produceThread) {
++        qCWarning(PIPEWIRERECORD_LOGGING) << "Changing damage enabled while recording is not supported";
++        return;
++    }
++    d->m_damageEnabled = enabled;
++}
++
+ PipeWireBaseEncodedStream::EncodingPreference PipeWireBaseEncodedStream::encodingPreference()
+ {
+     return d->m_encodingPreference;
+--- a/src/pipewireencodedstream.h	2026-01-13 06:58:10.000000000 -0600
++++ b/src/pipewireencodedstream.h	2026-02-19 23:40:48.974238026 -0600
+@@ -7,6 +7,8 @@
+ #pragma once
+ 
+ #include <QObject>
++#include <QRegion>
++#include <QSize>
+ 
+ #include "pipewirebaseencodedstream.h"
+ #include <kpipewire_export.h>
+@@ -14,6 +16,17 @@
+ struct PipeWireCursor;
+ class PipeWirePacketPrivate;
+ 
++struct KPIPEWIRE_EXPORT PipeWireEncodedFrameMeta {
++    QRegion damage;
++    QSize size;
++    quint64 sequence = 0;
++    qint64 ptsNs = 0;
++    bool hasDamage = false;
++    bool hasSequence = false;
++    bool hasPts = false;
++};
++Q_DECLARE_METATYPE(PipeWireEncodedFrameMeta)
++
+ class KPIPEWIRE_EXPORT PipeWireEncodedStream : public PipeWireBaseEncodedStream
+ {
+     Q_OBJECT
+@@ -38,6 +51,7 @@
+     void sizeChanged(const QSize &size);
+     void cursorChanged(const PipeWireCursor &cursor);
+     void newPacket(const Packet &packet);
++    void frameMetadata(const PipeWireEncodedFrameMeta &meta);
+ 
+ protected:
+     std::unique_ptr<PipeWireProduce> makeProduce() override;
+--- a/src/pipewireencodedstream.cpp	2026-01-13 06:58:10.000000000 -0600
++++ b/src/pipewireencodedstream.cpp	2026-02-19 23:40:56.136042674 -0600
+@@ -67,6 +67,22 @@
+         Q_EMIT m_encodedStream->sizeChanged(m_size);
+     }
+ 
++    PipeWireEncodedFrameMeta meta;
++    meta.size = m_stream->size();
++    if (frame.damage) {
++        meta.damage = *frame.damage;
++        meta.hasDamage = true;
++    }
++    if (frame.sequential) {
++        meta.sequence = *frame.sequential;
++        meta.hasSequence = true;
++    }
++    if (frame.presentationTimestamp) {
++        meta.ptsNs = frame.presentationTimestamp->count();
++        meta.hasPts = true;
++    }
++    Q_EMIT m_encodedStream->frameMetadata(meta);
++
+     PipeWireProduce::processFrame(frame);
+     if (frame.cursor && m_cursor != *frame.cursor) {
+         m_cursor = *frame.cursor;
+@@ -77,6 +93,7 @@
+ PipeWireEncodedStream::PipeWireEncodedStream(QObject *parent)
+     : PipeWireBaseEncodedStream(parent)
+ {
++    qRegisterMetaType<PipeWireEncodedFrameMeta>();
+ }
+ 
+ PipeWireEncodedStream::~PipeWireEncodedStream() = default;
+--- a/src/pipewireproduce_p.h	2026-01-13 06:58:10.000000000 -0600
++++ b/src/pipewireproduce_p.h	2026-02-19 23:40:37.562550685 -0600
+@@ -97,6 +97,7 @@
+     void setQuality(const std::optional<quint8> &quality);
+ 
+     void setEncodingPreference(const PipeWireBaseEncodedStream::EncodingPreference &encodingPreference);
++    void setDamageEnabled(bool enabled);
+ 
+     void handleEncodedFramesChanged();
+ 
+@@ -114,6 +115,7 @@
+     std::optional<quint8> m_quality;
+ 
+     PipeWireBaseEncodedStream::EncodingPreference m_encodingPreference;
++    bool m_damageEnabled = false;
+ 
+     struct {
+         QImage texture;
+--- a/src/pipewireproduce.cpp	2026-01-13 06:58:10.000000000 -0600
++++ b/src/pipewireproduce.cpp	2026-02-19 23:40:42.528414420 -0600
+@@ -51,6 +51,7 @@
+ {
+     m_stream.reset(new PipeWireSourceStream(nullptr));
+     m_stream->setMaxFramerate(m_frameRate);
++    m_stream->setDamageEnabled(m_damageEnabled);
+ 
+     // The check in supportsHardwareEncoding() is insufficient to fully
+     // determine if we actually support hardware encoding the current stream,
+@@ -273,6 +274,11 @@
+     }
+ }
+ 
++void PipeWireProduce::setDamageEnabled(bool enabled)
++{
++    m_damageEnabled = enabled;
++}
++
+ void PipeWireProduce::processFrame(const PipeWireFrame &frame)
+ {
+     auto f = frame;
