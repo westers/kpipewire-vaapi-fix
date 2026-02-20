@@ -50,7 +50,7 @@ The VAAPI patch works with any GPU that exposes VA-API H.264 encode capability:
 | **Intel** | `intel-media-driver` or `i965-va-driver` | Works out of the box |
 | **NVIDIA** | `nvidia-vaapi-driver` | Requires the VA-API compatibility layer for NVENC |
 
-Systems without VA-API support will use the libx264 software encoder (also fixed by patches 02, 03, and 05).
+Systems without VA-API support will use the libx264 software encoder (also fixed by patches 02, 03, 05, and 06).
 
 ## Symptoms (How to Tell if You Need This Fix)
 

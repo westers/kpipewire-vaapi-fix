@@ -3,7 +3,7 @@ set -e
 
 KPIPEWIRE_VERSION="6.5.5"
 KPIPEWIRE_DEB_VERSION="6.5.5-0ubuntu1"
-PATCHED_VERSION="${KPIPEWIRE_DEB_VERSION}+vaapi4"
+PATCHED_VERSION="${KPIPEWIRE_DEB_VERSION}+vaapi5"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Ensure Debian helper scripts that use `/usr/bin/env python3` resolve to
 # system Python (with distro modules like python3-debian), not user shims.
@@ -118,6 +118,7 @@ kpipewire (${PATCHED_VERSION}) resolute; urgency=medium\\
     - Fix software encoder filter graph syntax (KDE Bug 513077)\\
     - Add encoded frame damage metadata plumbing\\
     - Honor H264 profile selection in libx264 software fallback\\
+    - Skip unsupported VAAPI H264 profiles before hardware startup\\
 \\
  -- ${MAINTAINER}  ${TIMESTAMP}\\
 " debian/changelog

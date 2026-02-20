@@ -1,0 +1,102 @@
+Description: Skip unsupported VAAPI H264 profiles before hardware startup
+ Avoid initializing the VAAPI pipeline with unsupported H264 profiles on each
+ session. Probe profile support first and only try valid hardware profiles,
+ optionally retrying with baseline before software fallback.
+Author: westers
+Origin: local
+Forwarded: no
+--- a/src/pipewireproduce.cpp
++++ b/src/pipewireproduce.cpp
+@@ -22,6 +22,7 @@
+ #include "libvpxvp9encoder_p.h"
+ #include "libwebpencoder_p.h"
+ #include "libx264encoder_p.h"
++#include "vaapiutils_p.h"
+ 
+ #include "logging_frame_statistics.h"
+ 
+@@ -32,6 +33,55 @@
+ Q_DECLARE_METATYPE(std::optional<int>);
+ Q_DECLARE_METATYPE(std::optional<std::chrono::nanoseconds>);
+ 
++namespace {
++
++VAProfile toVaProfile(Encoder::H264Profile profile)
++{
++    switch (profile) {
++    case Encoder::H264Profile::Baseline:
++        return VAProfileH264ConstrainedBaseline;
++    case Encoder::H264Profile::Main:
++        return VAProfileH264Main;
++    case Encoder::H264Profile::High:
++        return VAProfileH264High;
++    }
++    return VAProfileNone;
++}
++
++const char *profileName(Encoder::H264Profile profile)
++{
++    switch (profile) {
++    case Encoder::H264Profile::Baseline:
++        return "Baseline";
++    case Encoder::H264Profile::Main:
++        return "Main";
++    case Encoder::H264Profile::High:
++        return "High";
++    }
++    return "Unknown";
++}
++
++std::vector<Encoder::H264Profile> hardwareProfilesToTry(Encoder::H264Profile requested)
++{
++    auto vaapi = VaapiUtils::instance();
++    std::vector<Encoder::H264Profile> profiles;
++
++    if (vaapi->supportsProfile(toVaProfile(requested))) {
++        profiles.push_back(requested);
++        return profiles;
++    }
++
++    // Requested profile is not supported in VAAPI. Try baseline as the widest
++    // H.264 hardware profile before falling back to software encoders.
++    if (requested != Encoder::H264Profile::Baseline && vaapi->supportsProfile(VAProfileH264ConstrainedBaseline)) {
++        profiles.push_back(Encoder::H264Profile::Baseline);
++    }
++
++    return profiles;
++}
++
++}
++
+ PipeWireProduce::PipeWireProduce(PipeWireBaseEncodedStream::Encoder encoderType, uint nodeId, uint fd, const Fraction &framerate)
+     : QObject()
+     , m_nodeId(nodeId)
+@@ -394,12 +444,22 @@
+         auto profile = m_encoderType == PipeWireBaseEncodedStream::H264Baseline ? Encoder::H264Profile::Baseline : Encoder::H264Profile::Main;
+ 
+         if (forcedEncoder.isNull() || forcedEncoder == u"h264_vaapi") {
+-            auto hardwareEncoder = std::make_unique<H264VAAPIEncoder>(profile, this);
+-            hardwareEncoder->setQuality(m_quality);
+-            hardwareEncoder->setEncodingPreference(m_encodingPreference);
+-            hardwareEncoder->setColorRange(m_colorRange);
+-            if (hardwareEncoder->initialize(size)) {
+-                return hardwareEncoder;
++            const auto profiles = hardwareProfilesToTry(profile);
++            if (profiles.empty()) {
++                qCDebug(PIPEWIRERECORD_LOGGING) << "Skipping VAAPI startup for unsupported H264 profile" << profileName(profile);
++            }
++            for (const auto hwProfile : profiles) {
++                if (hwProfile != profile) {
++                    qCDebug(PIPEWIRERECORD_LOGGING) << "VAAPI does not support requested profile" << profileName(profile)
++                                                    << "retrying hardware with" << profileName(hwProfile);
++                }
++                auto hardwareEncoder = std::make_unique<H264VAAPIEncoder>(hwProfile, this);
++                hardwareEncoder->setQuality(m_quality);
++                hardwareEncoder->setEncodingPreference(m_encodingPreference);
++                hardwareEncoder->setColorRange(m_colorRange);
++                if (hardwareEncoder->initialize(size)) {
++                    return hardwareEncoder;
++                }
+             }
+         }
+ 
