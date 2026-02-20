@@ -1,18 +1,17 @@
 Description: Honor requested H.264 profile for libx264 software fallback
  libx264 can still settle on constrained baseline when using speed-oriented
  presets unless profile is explicitly provided as an encoder option. Mirror
- the selected H264 profile (Baseline/Main/High) into encoder options so
- H264Main requests remain Main when VAAPI is unavailable.
+ the selected H264 profile (Baseline/Main/High) into encoder options and
+ re-enable CABAC for Main/High so speed presets do not silently downgrade.
 Author: westers
 Origin: local
 Forwarded: no
---- a/src/libx264encoder.cpp	2026-02-20 00:00:00.000000000 -0600
-+++ b/src/libx264encoder.cpp	2026-02-20 00:00:00.000000000 -0600
-@@ -116,6 +116,20 @@
- AVDictionary *LibX264Encoder::buildEncodingOptions()
+--- a/src/libx264encoder.cpp
++++ b/src/libx264encoder.cpp
+@@ -111,6 +111,26 @@
  {
      AVDictionary *options = SoftwareEncoder::buildEncodingOptions();
-+
+ 
 +    const char *profileName = "baseline";
 +    switch (m_profile) {
 +    case H264Profile::Baseline:
@@ -26,6 +25,13 @@ Forwarded: no
 +        break;
 +    }
 +    av_dict_set(&options, "profile", profileName, 0);
- 
++    if (m_profile == H264Profile::Main || m_profile == H264Profile::High) {
++        // Speed presets like ultrafast can disable CABAC and effectively force
++        // constrained baseline. Re-enable CABAC when main/high are requested.
++        av_dict_set(&options, "coder", "ac", 0);
++        av_dict_set(&options, "x264-params", "cabac=1", 0);
++    }
++
      // Disable motion estimation, not great while dragging windows but speeds up encoding by an order of magnitude
      av_dict_set(&options, "flags", "+mv4", 0);
+     // Disable in-loop filtering
